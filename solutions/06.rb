@@ -6,17 +6,15 @@ class TurtleGraphics
     def initialize(rows, columns)
       @rows = rows
       @columns = columns
-      @matrix = Array.new(@rows) { Array.new(@columns) { 0 } }
+      @matrix = Array.new(rows) { [0] * columns }
       @orientation = :right
-      @current_position = nil
+      @position = nil
     end
 
     def draw(canvas = nil, &block)
-      if block_given?
-        self.instance_eval(&block)
-      end
+      if block_given? then self.instance_eval(&block) end
 
-      if @current_position == nil then spawn_at(0, 0) end
+      if @position == nil then spawn_at(0, 0) end
 
       if canvas != nil
         if canvas.respond_to?(:ascii_draw)
@@ -30,15 +28,21 @@ class TurtleGraphics
     end
 
     def move
-      if @current_position == nil then spawn_at(0, 0) end
+      if @position == nil then spawn_at(0, 0) end
       direction = [0, 0]
-      if @orientation == :left  then direction[1] = -1 end
-      if @orientation == :up    then direction[0] = -1 end
-      if @orientation == :right then direction[1] =  1 end
-      if @orientation == :down  then direction[0] =  1 end
-      @current_position = [(@current_position[0] + direction[0]) % @rows,
-                           (@current_position[1] + direction[1]) % @columns]
-      @matrix[@current_position[0]][@current_position[1]] += 1
+      case @orientation
+        when :left  then direction[1] = -1
+        when :up    then direction[0] = -1
+        when :right then direction[1] =  1
+        when :down  then direction[0] =  1
+      end
+      change_position(direction)
+    end
+
+    def change_position(direction)
+      @position = [(@position[0] + direction[0]) % @rows,
+                   (@position[1] + direction[1]) % @columns]
+      @matrix[@position[0]][@position[1]] += 1
     end
 
     def turn_left
@@ -54,8 +58,8 @@ class TurtleGraphics
     end
 
     def spawn_at(row, column)
-      @current_position = [row, column]
-      @matrix[@current_position[0]][@current_position[1]] += 1
+      @position = [row, column]
+      @matrix[@position[0]][@position[1]] += 1
     end
 
     def look(orientation)
@@ -70,44 +74,75 @@ class TurtleGraphics
       end
 
       def ascii_draw(matrix)
-        max_number = matrix.flatten.max
-        result = []
-        matrix.each_with_index do |x, xi|
-          temp = ""
-          x.each_with_index do |y, yi|
-            itensity = y.fdiv(max_number) * (@symbols.size - 1)
-            symbol = @symbols[itensity.ceil]
-            temp += symbol
-          end
-          result << temp
-        end
-        result.join("\n")
+        max_number = matrix.map(&:max).max
+
+        matrix.map do |row|
+          row.map do |steps|
+            symbol_for_step_count(steps, max_number)
+          end.join('')
+        end.join("\n")
+      end
+
+      private
+
+      def symbol_for_step_count(steps, maximum_steps)
+        intensity = steps.to_f / maximum_steps
+        symbol_index = (intensity * (@symbols.size - 1)).ceil
+
+        @symbols[symbol_index]
       end
     end
 
     class HTML
-      def initialize(size_pixels)
-        @size_pixels = size_pixels
+      TEMPLATE = <<-TEMPLATE.freeze
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Turtle graphics</title>
+          <style>
+            table {
+              border-spacing: 0;
+            }
+            tr {
+              padding: 0;
+            }
+            td {
+              width: %{size_pixels}px;
+              height: %{size_pixels}px;
+              background-color: black;
+              padding: 0;
+            }
+          </style>
+        </head>
+        <body>
+          <table>%{rows}</table>
+        </body>
+        </html>
+      TEMPLATE
 
-        @text = "<!DOCTYPE html><html><head><title>Turtle graphics</title>" +
-        "<style>table { border-spacing: 0; } tr { padding: 0; } " +
-        "td { width: #{@size_pixels}px; height: #{@size_pixels}px; " +
-        "background-color: black; padding: 0; } </style> " +
-        "</head> <body> <table>"
+      def initialize(size_pixels = 3)
+        @size_pixels = size_pixels
       end
 
-      def html_draw(matrix)
-        max_number = matrix.flatten.max
-        matrix.each_with_index do |x, xi|
-          temp = "<tr>"
-          x.each_with_index do |y, yi|
-            itensity = format('%.2f', y.fdiv(max_number))
-            temp += "<td style=\"opacity: #{itensity}\"></td>"
+      def html_draw(canvas)
+        maximum_intensity = canvas.map(&:max).max
+
+        TEMPLATE % {
+          size_pixels: @size_pixels,
+          rows: table_rows(canvas, maximum_intensity.to_f)
+        }
+      end
+
+      private
+
+      def table_rows(canvas, maximum_intensity)
+        canvas.map do |row|
+          columns = row.map do |intensity|
+            '<td style="opacity: %.2f"></td>' % (intensity / maximum_intensity)
           end
-          temp += "</tr>"
-          @text += temp
-        end
-        @text += "</table> </body> </html>"
+
+          "<tr>#{columns.join('')}</tr>"
+        end.join('')
       end
     end
   end
